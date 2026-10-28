@@ -128,7 +128,7 @@ class Controller(threading.Thread):
     def reconnect(self) -> None:
         self.q.put(("reconnect", ()))
 
-    def hard_reset(self) -> None:
+    def reset(self) -> None:
         self.q.put(("reset", ()))
 
     def manual(self, text: str) -> None:

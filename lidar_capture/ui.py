@@ -102,8 +102,10 @@ class StepCard(tk.Frame):
 
         self.columnconfigure(1, weight=1)
         self.columnconfigure(2, minsize=60)
+        self.status = "pending"
 
     def set(self, status: str, detail: str = ""):
+        self.status = status
         label, bg, fg = STEP_STYLE.get(status, STEP_STYLE["pending"])
         self.chip.configure(text=label, bg=bg, fg=fg)
         self.badge.itemconfigure(self.badge_id, fill=bg)
@@ -179,12 +181,20 @@ class App(tk.Tk):
         self.bind("<F6>", lambda _e: self._stop())
         self.bind("<F7>", lambda _e: self._reconnect())
         self.ctrl.start()
-        self.after(60, self._drain)
-        self.after(500, self._tick_clock)
+        self._timers: list[str] = []
+        self._closing = False
+        self._every(60, self._drain)
+        self._every(500, self._tick_clock)
         self._apply_steps()
         self._set_state(self.ctrl.state)
         if demo:
-            self.after(800, self._demo_tick, 0)
+            self._every(800, self._demo_tick, 0)
+
+    def _every(self, delay: int, fn, *args) -> None:
+        """记下 after 的 id，关窗时统一取消，免得销毁后回调还在跑。"""
+        if self._closing:
+            return
+        self._timers.append(self.after(delay, fn, *args))
 
     def _fit_to_screen(self):
         """默认给一个大窗口，但不超过屏幕的九成，免得小屏上按钮跑到屏幕外。"""
@@ -565,10 +575,10 @@ class App(tk.Tk):
     def _demo_tick(self, phase):
         if phase == 0:
             self.ctrl.connect()
-            self.after(2200, self._demo_tick, 1)
+            self._every(2200, self._demo_tick, 1)
         elif phase == 1:
             self.ctrl.start_recording()
-            self.after(6000, self._demo_tick, 2)
+            self._every(6000, self._demo_tick, 2)
         elif phase == 2:
             self.ctrl.stop_recording()
 
@@ -580,7 +590,7 @@ class App(tk.Tk):
         if self._elapsed_mark is not None and self._clock_state in self.ACTIVE_CLOCK:
             secs = self._elapsed_base + (time.monotonic() - self._elapsed_mark)
             self.clock.configure(text=human_duration(secs))
-        self.after(500, self._tick_clock)
+        self._every(500, self._tick_clock)
 
     def _drain(self):
         try:
@@ -589,7 +599,7 @@ class App(tk.Tk):
                 self._handle(ev)
         except queue.Empty:
             pass
-        self.after(60, self._drain)
+        self._every(60, self._drain)
 
     def _handle(self, ev: dict):
         kind = ev.get("type")
@@ -719,6 +729,12 @@ class App(tk.Tk):
             pass
 
     def _on_close(self):
+        self._closing = True
+        for timer in getattr(self, "_timers", []):
+            try:
+                self.after_cancel(timer)
+            except Exception:  # noqa: BLE001
+                pass
         try:
             self.ctrl.shutdown()
             self.ctrl.join(timeout=3)

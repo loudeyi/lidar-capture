@@ -112,10 +112,11 @@ class MinicomConsole(Console):
 
     name = "minicom"
 
-    def __init__(self, device: str, baud: int, workdir: Path):
+    def __init__(self, device: str, baud: int, workdir: Path | None = None):
         self.device = device
         self.baud = baud
-        self.workdir = Path(workdir)
+        # 工作目录只用来放 minicom 的临时 HOME；没给就自己开一个
+        self.workdir = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="lidar-minicom-"))
         self.master: int | None = None
         self.proc: subprocess.Popen | None = None
         self._home: str | None = None
@@ -216,9 +217,9 @@ class SerialLink:
 
     name = "serial"
 
-    def __init__(self, cfg, runtime_dir: Path):
+    def __init__(self, cfg, runtime_dir: Path | None = None):
         self.cfg = cfg
-        self.runtime_dir = Path(runtime_dir)
+        self.runtime_dir = Path(runtime_dir) if runtime_dir else None
         self.console: Console | None = None
 
     def connect(self) -> Console:
@@ -273,7 +274,7 @@ class SimLinkAdapter:
         return f"模拟 3588 · 场景 {self.sim.scenario}"
 
 
-def build_link(cfg, runtime_dir: Path):
+def build_link(cfg, runtime_dir: Path | None = None):
     if cfg.is_sim:
         from .sim import SimLink
 
