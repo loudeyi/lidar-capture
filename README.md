@@ -1,150 +1,152 @@
-# LiDAR 采集控制台
+# LiDAR Capture Console
 
-[![测试状态](https://github.com/loudeyi/lidar-capture/actions/workflows/tests.yml/badge.svg)](https://github.com/loudeyi/lidar-capture/actions/workflows/tests.yml)
-[![许可证：MIT](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-blue.svg)](LICENSE)
+English | [简体中文](README_zh.md)
 
-把无人机采集 LiDAR 的那套手工流程——**插线 → minicom → 关内核打印 → tcpdump 录制 → 看 pcap 长不长 → 拔线起飞 → 落地插线 → kill tcpdump → 确认停了**——做成一个有独立窗口、能看进度的工具。
+[![tests](https://github.com/loudeyi/lidar-capture/actions/workflows/tests.yml/badge.svg)](https://github.com/loudeyi/lidar-capture/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-判定不靠猜：
+A GUI for the manual workflow we used to run on every drone LiDAR flight — **plug in → `minicom` → silence the kernel log → start `tcpdump` → check whether the pcap is growing → unplug and fly → plug back in → kill `tcpdump` → confirm it really stopped** — with live progress instead of guesswork.
 
-- **pcap 持续变大 = 正在录制**
-- **远端 `pgrep -x tcpdump` 找不到且 `ll` 大小不再变化 = 已停止**
-- 拔线不影响飞行中的 3588（它还在录），插回来点「重新连接」就先查一次远端进程，还在录就直接接上监视
+The rules are explicit, not vibes:
 
-界面用 Python + Tkinter 写成，**不装任何第三方包**；真机、模拟两条链路只换传输层，判定逻辑完全一样。
+- **pcap keeps growing = recording**
+- **`pgrep -x tcpdump` finds nothing on the remote side AND `ll` shows an unchanged size = stopped**
+- Unplugging the cable does not disturb the 3588 in flight: it keeps recording. On reconnect the app checks the remote process first and, if it is still running, picks the session back up instead of starting over.
 
-## 截图
+Written in Python + Tkinter, **no third-party packages**. The real and simulated links share every judgement rule; only the transport differs.
 
-![连接完成](docs/shots/01-connected.png)
+## Screenshots
 
-| 录制中 | 已停止 |
+![Connected](docs/shots/01-connected.png)
+
+| Recording | Stopped |
 | --- | --- |
-| ![录制中](docs/shots/02-recording.png) | ![已停止](docs/shots/05-stopped.png) |
+| ![Recording](docs/shots/02-recording.png) | ![Stopped](docs/shots/05-stopped.png) |
 
-拔线时状态栏变红「未连接」，但 3588 还在录、计时继续走；插回去点「重新连接」自动接管：
+When the cable is pulled the status bar turns red ("not connected"), yet the 3588 keeps recording and the timer keeps running; clicking **Reconnect** takes the session back:
 
-| 拔线 | 重新连接 |
+| Unplugged | Reconnected |
 | --- | --- |
-| ![拔线](docs/shots/03-disconnected.png) | ![重新连接](docs/shots/04-reconnected.png) |
+| ![Unplugged](docs/shots/03-disconnected.png) | ![Reconnected](docs/shots/04-reconnected.png) |
 
-窗口按屏幕大小自适应（最大 1640×1080）；按钮也可以走快捷键 `F5` 开始 / `F6` 停止 / `F7` 重新连接。
+The window sizes itself to the screen (up to 1640×1080); the buttons also have shortcuts — `F5` start, `F6` stop, `F7` reconnect.
 
-## 两个入口脚本
+## Two entry points
 
-| 脚本 | 模式 | 用途 |
+| Script | Mode | Purpose |
 | --- | --- | --- |
-| `./run.sh` | `--profile real` | **工作模式**：接真机 3588（`/dev/ttyUSB0` + `eth1`） |
-| `./run_demo.sh` | `--profile sim` | **演示模式**：本机 pty 上跑一个假 3588，不需要任何硬件 |
+| `./run.sh` | `--profile real` | **Work mode**: the real 3588 (`/dev/ttyUSB0` + `eth1`) |
+| `./run_demo.sh` | `--profile sim` | **Demo mode**: a fake 3588 on a local pty, no hardware needed |
 
-两个脚本都会把参数原样传给 `main.py`，所以还能临时覆盖默认值：
+Both pass their arguments straight to `main.py`, so defaults can be overridden:
 
 ```bash
-./run.sh --device /dev/ttyUSB1 --interface eth0   # 换串口/网口
-./run_demo.sh --scenario no_traffic               # 演示“命令发出但 pcap 不变大”
-./run_demo.sh --demo                              # 自动演一遍：连接→录制→停止
+./run.sh --device /dev/ttyUSB1 --interface eth0   # another serial port / NIC
+./run_demo.sh --scenario no_traffic               # "command sent but pcap never grows"
+./run_demo.sh --demo                              # auto-play: connect → record → stop
 ```
 
-> `python3 main.py` 也能直接跑，默认是 `sim`（开发时方便）；正式采集请用 `./run.sh`。
+> `python3 main.py` works too and defaults to `sim` for development; use `./run.sh` for real captures.
 
-## 环境要求
+## Requirements
 
-- Python 3.8+，带 Tkinter（Debian/Ubuntu：`sudo apt install python3-tk`）
-- 真机模式额外需要：`minicom`、3588 上的 `tcpdump`，以及能免密执行 `sudo dmesg -D` / `sudo pkill tcpdump`
-- 3588 连上串口后直接就是 shell，登录后的当前目录就是 `lidar.pcap` 所在目录
+- Python 3.8+ with Tkinter (Debian/Ubuntu: `sudo apt install python3-tk`)
+- Work mode additionally needs `minicom`, `tcpdump` on the 3588, and passwordless `sudo dmesg -D` / `sudo pkill tcpdump`
+- The 3588 drops straight into a shell over the serial cable; its working directory is where `lidar.pcap` lives
 
 ```bash
 git clone https://github.com/loudeyi/lidar-capture.git
 cd lidar-capture
-./run_demo.sh          # 先看演示，确认界面正常
-./run.sh               # 接真机开始采集
+./run_demo.sh          # try the demo first
+./run.sh               # capture from the real device
 ```
 
-## 四步与判定规则
+## The four steps and their checks
 
-| 步骤 | 实际命令 | 成功标准 |
+| Step | Command | Success criterion |
 | --- | --- | --- |
-| ① 连接 | `minicom -D /dev/ttyUSB0 -b 1500000` | 3588 回了一个独行 `__PING__` |
-| ② 静音 | `sudo dmesg -D` | 退出码 0，失败就拦住录制 |
-| ③ 录制 | `nohup tcpdump -i eth1 -w lidar.pcap &` | 每 2 秒 `ll lidar.pcap`，窗口内持续变大 |
-| ④ 停止 | `sudo pkill tcpdump` | `pgrep -x tcpdump` 没了，且 `ll` 大小不再变化 |
+| ① Connect | `minicom -D /dev/ttyUSB0 -b 1500000` | the 3588 returns a lone `__PING__` line |
+| ② Silence | `sudo dmesg -D` | exit code 0 — otherwise recording is blocked |
+| ③ Record | `nohup tcpdump -i eth1 -w lidar.pcap &` | `ll lidar.pcap` every 2 s shows steady growth |
+| ④ Stop | `sudo pkill tcpdump` | `pgrep -x tcpdump` is gone and the `ll` size stops changing |
 
-- 每条命令都包了 `echo __B<n>__ … echo __RC<n>__ $? … echo __E<n>__` 三行标记，靠整行匹配定位输出，不会被串口刷屏里的无关字符骗到。
-- 停止最多重试 `stop_timeout`（默认 12 秒），期间把「第几次确认、进程在不在、pcap 多大」写进事件页；确认不了就明确显示**停止失败**，不假装成功。
-- 「串口输出」页只留人看的东西：连接横幅、`dmesg` 结果、`[1] 101` 回执，以及**结论变化时**的一行证据（如 `ll lidar.pcap → 3.07 MB（在变长）`）。协议标记、轮询回显都过滤掉了，不会刷屏。
-- 采集文件名固定 `lidar.pcap`，**覆盖式**；重新开始录制会覆盖上一段数据和上一轮日志。
+- Every command is wrapped in three marker lines — `echo __B<n>__ … echo __RC<n>__ $? … echo __E<n>__` — matched whole-line, so noise on the serial console cannot confuse the parser.
+- Stopping retries for up to `stop_timeout` (12 s by default), showing the attempt number, process state and pcap size in the event pane; if it cannot be confirmed the UI says **stop failed** instead of pretending.
+- The "serial output" pane only keeps things a human wants: the boot banner, the `dmesg` result, the `[1] 101` job notice, and **one evidence line whenever the verdict changes**, e.g. `ll lidar.pcap → 3.07 MB (growing)`. Protocol markers and polling echo are filtered out.
+- The capture file is always `lidar.pcap`, **overwritten** on each new session, together with the previous session's logs.
 
-## 演示模式是真的在跑
+## Demo mode actually runs something
 
-不是假动画：用 `pty` 起真 `bash`，`PATH` 里塞了假的 `tcpdump / pgrep / pkill / sudo / dmesg / ll`，`lidar.pcap` 是真文件、真增长；“拔线”就是关掉 pty 主端——假 `tcpdump` 因为 `nohup` 还活着，重新“插线”后新 bash 里 `pgrep` 仍能找到它，和真机行为一致。
+Not an animation: it spawns a real `bash` on a `pty` with stub `tcpdump / pgrep / pkill / sudo / dmesg / ll` on `PATH`, and the pcap is a real, growing file. "Unplug" closes the pty master — the stub `tcpdump` survives thanks to `nohup`, so after "re-plugging" a fresh bash still finds it with `pgrep`, exactly like the real thing.
 
-预置场景：`normal`、`no_traffic`（命令发出但没上包）、`stall_then_grow`（先卡住再开始）、`stuck`（pkill 杀不掉）、`dmesg_fail`（第二步失败）。
+Built-in scenarios: `normal`, `no_traffic` (command sent, nothing captured), `stall_then_grow` (stalls first, then starts), `stuck` (`pkill` refuses to die), `dmesg_fail` (step ② fails).
 
-## 日志与产物
+## Logs and artifacts
 
-全部在项目目录下，**每次开始录制都覆盖上一轮**（和 pcap 一样）：
+Everything lives in the project directory and is **overwritten at the start of each session**, just like the pcap:
 
 ```
-logs/session.log   完整串口记录（含开始前的连接阶段）
-logs/events.jsonl  结构化事件：link_open / start / recording / stopped / stop_failed …
-logs/summary.md    本轮结果：时长、大小、平均速率、原因
-runtime/lidar.pcap 演示模式下假 3588 的录制文件
+logs/session.log    full serial transcript (including the pre-flight connect phase)
+logs/events.jsonl   structured events: link_open / start / recording / stopped / stop_failed …
+logs/summary.md     session result: duration, size, average rate, reason
+runtime/lidar.pcap  the fake 3588's capture file in demo mode
 ```
 
-## 配置
+## Configuration
 
-首次运行会在项目根目录生成 `config.toml`（已在 `.gitignore` 里，不会进仓库）：
+A `config.toml` is created in the project root on first run (already ignored by git):
 
-| 键 | 默认 | 说明 |
+| Key | Default | Meaning |
 | --- | --- | --- |
-| `profile` | `sim` | `sim` / `real`，会被入口脚本覆盖 |
-| `device` / `baud` | `/dev/ttyUSB0` / `1500000` | 串口 |
-| `interface` | `eth1` | tcpdump 录制的网口 |
-| `remote_file` / `remote_dir` | `lidar.pcap` / 空 | 远端文件名与目录 |
-| `console` | `minicom` | `minicom`（外部）/ `native`（内置 termios） |
-| `auto_connect` | `true` | 连上后自动执行 `sudo dmesg -D` |
-| `poll_interval` | `2.0` | pcap 采样间隔（秒） |
-| `start_timeout` / `stop_timeout` | `30` / `12` | 等上包 / 等停止的上限 |
+| `profile` | `sim` | `sim` / `real`; the entry scripts override it |
+| `device` / `baud` | `/dev/ttyUSB0` / `1500000` | serial port |
+| `interface` | `eth1` | NIC captured by tcpdump |
+| `remote_file` / `remote_dir` | `lidar.pcap` / empty | remote file name and directory |
+| `console` | `minicom` | `minicom` (external) or `native` (built-in termios) |
+| `auto_connect` | `true` | run `sudo dmesg -D` right after connecting |
+| `poll_interval` | `2.0` | pcap sampling interval, seconds |
+| `start_timeout` / `stop_timeout` | `30` / `12` | wait for packets / wait for stop |
 
-命令行参数优先于配置文件，例如 `./run.sh --poll 1`。
+Command-line flags win over the config file, e.g. `./run.sh --poll 1`.
 
-## 测试
+## Tests
 
 ```bash
-python3 -m unittest discover -s tests -v     # 44 个用例，约 23 秒
+python3 -m unittest discover -s tests -v     # 44 tests, ~23 s
 ```
 
-- 单元测试：配置往返、大小滑动窗口、标记解析、假 shell、`ll` 输出解析、协议回声过滤、证据行规则
-- 端到端（`tests/test_sim_integration.py`）：正常录制 → 停止确认 → 日志覆盖 → 拔线重连 → 停止卡住报错 → 没上包超时 → `dmesg` 失败拦截
+- Unit tests: config round-trip, size sliding window, marker parsing, fake shell, `ll` output parsing, protocol echo filtering, evidence-line rules
+- End-to-end (`tests/test_sim_integration.py`): happy path → stop confirmation → log overwrite → unplug/replug → stuck stop reported as failure → start timeout when no packets arrive → `dmesg` failure blocks recording
 
-CI 在 GitHub Actions 上跑同一套（`.github/workflows/tests.yml`）。
+CI runs the same suite on GitHub Actions (`.github/workflows/tests.yml`).
 
-## 目录
+## Layout
 
 ```
-main.py                       入口（参数解析 → 配置文件 → 界面）
-run.sh / run_demo.sh          工作模式 / 演示模式
-lidar_capture/config.py       配置与命令模板
-lidar_capture/protocol.py     串口协议：标记、超时、拔线检测
-lidar_capture/transports.py   minicom / termios / 模拟三种链路
-lidar_capture/sim.py          假 3588（pty + 真 bash + 假命令）
-lidar_capture/sim_tcpdump.py  假 tcpdump（真写 pcap）
-lidar_capture/controller.py   状态机与全部判定
-lidar_capture/monitor.py      大小滑动窗口
-lidar_capture/events.py       会话日志（覆盖式）
-lidar_capture/ui.py           Tkinter 界面
-tools/shoot.py                连拍界面截图
-docs/shots/                   界面截图
-tests/                        单元测试 + 端到端模拟测试
+main.py                       entry point (args → config → GUI)
+run.sh / run_demo.sh          work mode / demo mode
+lidar_capture/config.py       config and command templates
+lidar_capture/protocol.py     serial protocol: markers, timeouts, unplug detection
+lidar_capture/transports.py   minicom / termios / simulated links
+lidar_capture/sim.py          fake 3588 (pty + real bash + stub commands)
+lidar_capture/sim_tcpdump.py  fake tcpdump (writes a real pcap)
+lidar_capture/controller.py   state machine and all the judgement
+lidar_capture/monitor.py      size sliding window
+lidar_capture/events.py       session logs (overwrite semantics)
+lidar_capture/ui.py           Tkinter UI
+tools/shoot.py                automated screenshots
+docs/shots/                   screenshots
+tests/                        unit tests + simulated end-to-end tests
 ```
 
-## 常见问题
+## FAQ
 
-- **第二步一直红**：3588 上 `sudo` 需要密码，先手动 `sudo -v` 或配好免密。
-- **`/dev/ttyUSB0` 打不开**：minicom 被别的窗口占着，或设备名不是这个（`ls /dev/ttyUSB*`）。
-- **`eth1` 不存在**：`ip link` 看实际网口，改 `--interface`。
-- **窗口太大/太小**：默认取屏幕的 94%（上限 1640×1080），直接拖边角也能改。
-- **想手动敲命令**：界面目前只提供四步按钮；调试可以调 `controller.manual("…")`。
+- **Step ② keeps failing**: `sudo` needs a password on the 3588 — run `sudo -v` once or configure passwordless sudo.
+- **`/dev/ttyUSB0` cannot be opened**: `minicom` already holds it, or the device name differs (`ls /dev/ttyUSB*`).
+- **`eth1` does not exist**: check `ip link` and pass the real interface with `--interface`.
+- **Window too big or too small**: it defaults to 94% of the screen (max 1640×1080); dragging the edges works too.
+- **Want to type commands yourself?** The UI only exposes the four steps; for debugging call `controller.manual("…")`.
 
-## 许可证
+## License
 
 [MIT](LICENSE) © 2026 loudeyi
